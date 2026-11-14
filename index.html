@@ -286,14 +286,22 @@ function setCtrl(){
 function autoSwitch(dt){
  if(!G||G.user<0)return;G.swCd=Math.max(0,(G.swCd||0)-dt);
  const me=G.t[G.user].ps,b=G.ball,ow=owner();
- if(ow&&ow.team===G.user)return;               // in attacco comanda chi ha palla
- if(G.swCd>0||!me.length)return;
- if(b.st==="pass"||b.st==="shot")return;       // non cambiare a metà passaggio/tiro
- let t=null;
- if(ow){t=me.find(p=>p.mark===ow);const n=nearestTo(me,ow);if(!t||dist(n,ow)<dist(t,ow)-1.2)t=n}
- else t=nearestTo(me,b);
- const c=G.ctrl;
- if(t&&t!==c&&(!c||!me.includes(c)||dist(t,ow||b)<dist(c,ow||b)-.8)){G.ctrl=t;G.swCd=.7}
+ if(!me.length)return;
+ if(ow&&ow.team===G.user){G.swKey=null;return}          // in attacco comanda chi ha palla
+ // chi è l'attaccante "caldo": chi ha palla, o chi sta per riceverla
+ let key=null;
+ if(ow)key=ow;else if(b.st==="pass"&&b.to&&b.to.team!==G.user)key=b.to;
+ if(key){
+  if(key!==G.swKey){                                     // nuovo portatore: passo subito al suo marcatore
+   G.swKey=key;const t=me.find(p=>p.mark===key)||nearestTo(me,key);
+   if(t&&t!==G.ctrl){G.ctrl=t;G.swCd=.4}
+  }
+  return;
+ }
+ G.swKey=null;
+ if(G.swCd>0||b.st==="shot")return;                     // palla vagante: il più vicino
+ const t=nearestTo(me,b),c=G.ctrl;
+ if(t&&t!==c&&(!c||!me.includes(c)||dist(t,b)<dist(c,b)-.8)){G.ctrl=t;G.swCd=.7}
 }
 function nearestTo(list,pt,excl){let b=null,bd=1e9;for(const p of list){if(p===excl)continue;const d=dist(p,pt);if(d<bd){bd=d;b=p}}return b}
 
@@ -930,13 +938,13 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{BG=null})
 function screen(html){const s=$("scr");s.style.display="block";s.scrollTop=0;s.innerHTML=`<div class="wrap">${html}</div>`;return s}
 function home(){
  S=null;QUICK=null;
- screen(`<h1>GBAM<br><b>Grande Basket<br>Alla Morte</b></h1><p class="sub">Streetball 4 contro 4 · si gioca a 11 · 1 e 2 punti · chi segna tiene palla</p>
+ screen(`<h1>GBAM<br><b>Grande Basket<br>Alla Morte</b></h1><p class="sub">Streetball da 2 a 4 per squadra · si gioca a 11 · 1 e 2 punti · chi segna tiene palla</p>
  <button class="big pri" id="m1">🏀 Ogni maledetto sabato<small>Sondaggio, squadre ai liberi, Palla al Vito, rotazione e acciacchi</small></button>
- <button class="big" id="m2">⚡ Partita rapida<small>4 contro 4 con giocatori a caso</small></button>
+ <button class="big" id="m2">⚡ Partita rapida<small>2 contro 2, 3 contro 3 o 4 contro 4</small></button>
  <button class="big" id="m3">📇 Schede della crew<small>Stat, mosse speciali, tic da campetto</small></button>
  <button class="big" id="m4">❔ Comandi e regole</button>
- <p class="foot">Prototipo v0.9.5 · Stat dal foglio GBAM_schede · Affidabilità da chat + 50 sondaggi</p>`);
- $("m1").onclick=poll;$("m2").onclick=quick;$("m3").onclick=cards;$("m4").onclick=help;
+ <p class="foot">Prototipo v0.9.6 · Stat dal foglio GBAM_schede · Affidabilità da chat + 50 sondaggi</p>`);
+ $("m1").onclick=poll;$("m2").onclick=()=>{QK={};quick()};$("m3").onclick=cards;$("m4").onclick=help;
 }
 function help(){
  screen(`<h2>Comandi</h2><div class="log">
@@ -1094,25 +1102,55 @@ function dayEndScreen(){
  <button class="big pri" id="bk">Menu</button>`);$("bk").onclick=()=>{pollState={};home()};
 }
 // ---------- PARTITA RAPIDA ----------
+let QK={};
 function quick(){
- const user=store.get("user","Alan"),court=store.get("court","pewex");
- const others=shuffle(CREW.map(c=>c.nick).filter(n=>n!==user)).slice(0,7);
- const pool=[user,...others].map(byNick).sort((a,b)=>b.tot-a.tot),A=[],B=[];
- pool.forEach((p,i)=>((i%4===0||i%4===3)?A:B).push(p.nick));
- const ut=A.includes(user)?0:1;
- screen(`<h2>Partita rapida</h2><p class="sub">Tu sei ⭐ ${user}</p>
- <div class="teams"><div class="team"><h3>${TEAMN[0]}</h3>${A.map(n=>`<div>${n===user?"⭐ ":""}${n}</div>`).join("")}</div><div class="team b"><h3>${TEAMN[1]}</h3>${B.map(n=>`<div>${n===user?"⭐ ":""}${n}</div>`).join("")}</div></div>
- <h2>Campetto</h2><div class="chips">${COURTS.map(c=>`<span class="chip ct ${c.id===court?"on":""}" data-c="${c.id}">${c.name}</span>`).join("")}</div>
- <h2>Chi sei?</h2><div class="chips">${CREW.map(c=>`<span class="chip us ${c.nick===user?"on":""}" data-n="${c.nick}">${c.nick}</span>`).join("")}</div>
- <button class="big pri" id="go">Gioca →</button><button class="big" id="rr">🎲 Rimescola</button><button class="big" id="bk">← Menu</button>`);
- document.querySelectorAll(".chip.us").forEach(el=>el.onclick=()=>{store.set("user",el.dataset.n);quick()});
- document.querySelectorAll(".chip.ct").forEach(el=>el.onclick=()=>{store.set("court",el.dataset.c);quick()});
- $("rr").onclick=quick;$("bk").onclick=home;
+ // 1. formato
+ if(!QK.n){
+  screen(`<h2>Partita rapida</h2><p class="sub">Quanti per squadra?</p>
+  <button class="big pri" data-n="2">2 contro 2<small>Campo largo, tanto uno contro uno</small></button>
+  <button class="big pri" data-n="3">3 contro 3<small>Il classico da campetto</small></button>
+  <button class="big pri" data-n="4">4 contro 4<small>Come il sabato quando siamo in 8</small></button>
+  <button class="big" id="bk">← Menu</button>`);
+  document.querySelectorAll("[data-n]").forEach(el=>el.onclick=()=>{QK.n=+el.dataset.n;quick()});
+  $("bk").onclick=home;return;
+ }
+ // 2. chi sei
+ if(!QK.user){
+  const cur=store.get("user","Alan");
+  screen(`<h2>Chi sei?</h2><p class="sub">${QK.n} contro ${QK.n}</p>
+  <div class="chips">${CREW.map(c=>`<span class="chip us ${c.nick===cur?"on":""}" data-n="${c.nick}">${c.nick}</span>`).join("")}</div>
+  <button class="big pri" id="ok">Avanti con ${cur} →</button><button class="big" id="bk">← Indietro</button>`);
+  document.querySelectorAll(".chip.us").forEach(el=>el.onclick=()=>{store.set("user",el.dataset.n);QK.user=el.dataset.n;quick()});
+  $("ok").onclick=()=>{QK.user=cur;quick()};$("bk").onclick=()=>{QK.n=0;quick()};return;
+ }
+ // 3. campetto
+ if(!QK.court){
+  const cur=store.get("court","pewex");
+  screen(`<h2>Campetto</h2><p class="sub">${QK.n} contro ${QK.n} · tu sei ⭐ ${QK.user}</p>
+  ${COURTS.map(c=>`<button class="big ${c.id===cur?"pri":""}" data-c="${c.id}">${c.name}<small>${c.sub||""}</small></button>`).join("")}
+  <button class="big" id="bk">← Indietro</button>`);
+  document.querySelectorAll("[data-c]").forEach(el=>el.onclick=()=>{store.set("court",el.dataset.c);QK.court=el.dataset.c;quick()});
+  $("bk").onclick=()=>{QK.user=null;quick()};return;
+ }
+ // 4. squadre
+ const n=QK.n,user=QK.user,court=QK.court;
+ if(!QK.A){
+  const others=shuffle(CREW.map(c=>c.nick).filter(x=>x!==user)).slice(0,n*2-1);
+  const pool=[user,...others].map(byNick).sort((a,b)=>b.tot-a.tot),A=[],B=[];
+  pool.forEach((p,i)=>((i%4===0||i%4===3)?A:B).push(p.nick));
+  QK.A=A;QK.B=B;
+ }
+ const A=QK.A,B=QK.B,ut=A.includes(user)?0:1;
+ screen(`<h2>Squadre</h2><p class="sub">${n} contro ${n} · ${(COURTS.find(c=>c.id===court)||{}).name||""}</p>
+ <div class="teams"><div class="team"><h3>${TEAMN[0]}</h3>${A.map(x=>`<div>${x===user?"⭐ ":""}${x}</div>`).join("")}</div><div class="team b"><h3>${TEAMN[1]}</h3>${B.map(x=>`<div>${x===user?"⭐ ":""}${x}</div>`).join("")}</div></div>
+ <button class="big pri" id="go">Gioca →</button><button class="big" id="rr">🎲 Rimescola</button><button class="big" id="bk">← Indietro</button>`);
+ $("rr").onclick=()=>{QK.A=null;quick()};$("bk").onclick=()=>{QK.court=null;QK.A=null;quick()};
  const qEnd=res=>{
   screen(`<h2>${TEAMN[res.winner]} vincono</h2><p class="sub">${res.score[0]} – ${res.score[1]}${res.winner===ut?" · bravo!":" · si rigioca sabato"}</p>
-  ${res.inj.length||res.acc.length?`<div class="log">${res.inj.map(n=>"🩼 "+n).concat(res.acc.map(n=>"🤕 "+n)).join("<br>")}</div>`:""}
-  <button class="big pri" id="ag">Rivincita</button><button class="big" id="bk">Menu</button>`);
-  $("ag").onclick=()=>newGame(A,B,R()<.5?0:1,{userTeam:ut,court,mode:"quick",onEnd:qEnd});$("bk").onclick=home};
+  ${res.inj.length||res.acc.length?`<div class="log">${res.inj.map(x=>"🩼 "+x).concat(res.acc.map(x=>"🤕 "+x)).join("<br>")}</div>`:""}
+  <button class="big pri" id="ag">Rivincita</button><button class="big" id="nw">Nuova partita</button><button class="big" id="bk">Menu</button>`);
+  $("ag").onclick=()=>newGame(A,B,R()<.5?0:1,{userTeam:ut,court,mode:"quick",onEnd:qEnd});
+  $("nw").onclick=()=>{QK={};quick()};$("bk").onclick=home};
  $("go").onclick=()=>newGame(A,B,R()<.5?0:1,{userTeam:ut,court,mode:"quick",onEnd:qEnd});
 }
 function menuPause(){
